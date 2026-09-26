@@ -24,15 +24,31 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA::12}"
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          TAGS="type=sha"
+          if [ "$BRANCH" = "master" ] || [ "$BRANCH" = "main" ]; then
+            TAGS="$TAGS
+            type=ref,event=branch,format=short
+            type=raw,value=latest"
+          elif [ "$BRANCH" = "wsmux-netdev" ]; then
+            TAGS="$TAGS
+            type=raw,value=wsmux-netdev"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
       - uses: docker/metadata-action@v5
         id: meta
         with:
           images: ghcr.io/justwasm/qemu-wasm-builder
-          tags: |
-            type=sha
-            type=ref,event=branch,format=short,enable={{is_default_branch}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=wsmux-netdev,enable={{github.ref == 'refs/heads/wsmux-netdev'}}
+          tags: ${{ steps.tags.outputs.tags }}
       - uses: docker/build-push-action@v5
         with:
           context: .
