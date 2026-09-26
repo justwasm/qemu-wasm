@@ -1,0 +1,122 @@
+name: release-qemu-wasm-wsmux
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+-wsmux.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish (must match vX.Y.Z-wsmuxN)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: qemu-wasm-wsmux-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  promote-release:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.value }}
+      assets: ${{ steps.tag.outputs.assets }}
+    steps:
+      - id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+          release_tag="${{ steps.tag.outputs.value }}"
+          if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-wsmux[0-9]+$ ]]; then
+            echo "Tag $release_tag does not match vX.Y.Z-wsmuxN"
+            exit 2
+          fi
+          gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$release_tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --generate-notes --title "QEMU Wasm wsmux $release_tag"
+          echo "value=$release_tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: promote-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: shallow
+      - name: Stage source for in-container build
+        run: |
+          rm -rf /tmp/qemu-src
+          git clone --depth 1 --branch "${GITHUB_REF_NAME}" \
+            "https://github.com/${GITHUB_REPOSITORY}.git" /tmp/qemu-src
+          cd /tmp/qemu-src
+          git submodule update --init --depth 1 roms/edk2 dtc 2>/dev/null || true
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+      - name: Build qemu-system-x86_64.wasm
+        run: |
+          docker build -t buildqemu - < Dockerfile
+          docker run --rm -d --name build-qemu-wasm -v /tmp/qemu-src:/qemu:ro buildqemu
+          docker exec build-qemu-wasm bash -c '
+            set -euo pipefail
+            EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js" ;
+            emconfigure /qemu/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
+              --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs \
+              --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="-sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS"
+            emmake make -j"$(nproc)" qemu-system-x86_64
+            mkdir -p /build/x86_64-wsmux
+            /emsdk/upstream/emscripten/tools/file_packager.py qemu-system-x86_64.data --preload /pack > /build/x86_64-wsmux/load.js || true
+            cp qemu-system-x86_64 qemu-system-x86_64.wasm qemu-system-x86_64.worker.js qemu-system-x86_64.data load.js /build/x86_64-wsmux/ 2>/dev/null || true
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qemu-system-x86_64-wsmux-${{ needs.promote-release.outputs.tag }}
+          path: build/x86_64-wsmux
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [promote-release, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: qemu-system-x86_64-wsmux-${{ needs.promote-release.outputs.tag }}
+          path: build/x86_64-wsmux
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_tag="${{ needs.promote-release.outputs.tag }}"
+          cd build/x86_64-wsmux
+          sha256sum qemu-system-x86_64 qemu-system-x86_64.wasm qemu-system-x86_64.worker.js qemu-system-x86_64.data load.js > SHA256SUMS
+          gh release upload "$release_tag" --repo "$GITHUB_REPOSITORY" --clobber \
+            qemu-system-x86_64 qemu-system-x86_64.wasm qemu-system-x86_64.worker.js qemu-system-x86_64.data load.js SHA256SUMS
+          echo "Published wsmux assets for $release_tag"
+
+      - name: Push image to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_tag="${{ needs.promote-release.outputs.tag }}"
+          oras login ghcr.io -u "$GITHUB_ACTOR" -p "$GH_TOKEN"
+          for arch in x86 riscv64 arm64; do
+            : # placeholder; arch-specific bundles live in separate workflows
+          done
+          echo "GHCR mirror placeholder for $release_tag"

@@ -14,6 +14,7 @@ system_ss.add(files(
   'stream.c',
   'dgram.c',
   'util.c',
+  'wsmux.c',
 ))
 
 if get_option('replication').allowed() or \

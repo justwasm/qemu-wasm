@@ -1,0 +1,79 @@
+name: build-qemu-wasm-wsmux
+
+on:
+  push:
+    branches: [wsmux-netdev, master]
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-x86_64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: shallow
+      - uses: docker/setup-buildx-action@v3
+      - name: Prune broken edk2 subhook submodule
+        run: |
+          if [ -d roms/edk2 ]; then
+            git -C roms/edk2 submodule deinit -f UnitTestFrameworkPkg/Library/SubhookLib/subhook || true
+            git -C roms/edk2 rm -f UnitTestFrameworkPkg/Library/SubhookLib/subhook || true
+            git -C roms/edk2 config -f --remove-section submodule."UnitTestFrameworkPkg/Library/SubhookLib/subhook" || true
+          fi
+      - name: Build qemu-system-x86_64.wasm (with wsmux netdev)
+        run: |
+          set -x
+          docker run --rm --pull=never \
+            -v "$PWD":/qemu:ro \
+            ghcr.io/justwasm/qemu-wasm-builder:wsmux-netdev \
+            bash -c '
+              set -euo pipefail
+              EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sASYNCIFY_IMPORTS=ffi_call_js"
+              # Pre-populate every wrap-git subproject so meson picks them up
+              # locally instead of trying to fetch from gitlab inside the
+              # sandbox.
+              for dir in dtc keycodemapdb berkeley-softfloat-3 berkeley-testfloat-3 libvfio-user libblkio slirp; do
+                case "$dir" in
+                  libblkio) url="https://gitlab.com/libblkio/libblkio" ;;
+                  slirp) url="https://gitlab.freedesktop.org/slirp/libslirp.git" ;;
+                  *) url="https://gitlab.com/qemu-project/${dir}.git" ;;
+                esac
+                if [ ! -d "subprojects/${dir}" ]; then
+                  git clone --depth 50 "$url" "subprojects/${dir}" || true
+                  git -C "subprojects/${dir}" fetch --depth 50 origin HEAD || true
+                  git -C "subprojects/${dir}" checkout --quiet FETCH_HEAD 2>/dev/null || true
+                fi
+              done
+              # Copy packagefiles into wrap-git subprojects that rely on
+              # patch_directory. Meson does not apply them automatically when
+              # the wrap source already exists locally, so we mirror what a
+              # wrap-git fetch would do.
+              for dir in berkeley-softfloat-3 berkeley-testfloat-3; do
+                if [ -d "subprojects/packagefiles/$dir" ] && [ -d "subprojects/$dir" ]; then
+                  cp -R "subprojects/packagefiles/$dir/." "subprojects/$dir/"
+                fi
+              done
+              # Remove edk2 (qemu-wasm subhook submodule is unreachable).
+              rm -rf subprojects/edk2
+              # Run configure + make using the staged tree.
+              emconfigure /qemu/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
+                --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs \
+                --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="-sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS"
+              emmake make -j"$(nproc)" qemu-system-x86_64
+              mkdir -p /qemu/out
+              cp /build/qemu-system-x86_64.wasm /qemu/out/
+              cp /build/qemu-system-x86_64 /qemu/out/out.js
+              cp /build/qemu-system-x86_64.worker.js /qemu/out/
+              ls -la /qemu/out
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qemu-system-x86_64-wsmux
+          path: out
+          if-no-files-found: error

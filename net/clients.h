@@ -40,6 +40,9 @@ int net_init_hubport(const Netdev *netdev, const char *name,
 int net_init_socket(const Netdev *netdev, const char *name,
                     NetClientState *peer, Error **errp);
 
+int net_init_wsmux(const Netdev *netdev, const char *name,
+                   NetClientState *peer, Error **errp);
+
 int net_init_stream(const Netdev *netdev, const char *name,
                     NetClientState *peer, Error **errp);
 
