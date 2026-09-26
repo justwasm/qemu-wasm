@@ -32,7 +32,7 @@ jobs:
             type=sha
             type=ref,event=branch,format=short,enable={{is_default_branch}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=wsmux-netdev,enable={{startsWith(github.ref, 'refs/heads/wsmux-netdev')}}
+            type=raw,value=wsmux-netdev,enable={{github.ref == 'refs/heads/wsmux-netdev'}}
       - uses: docker/build-push-action@v5
         with:
           context: .
