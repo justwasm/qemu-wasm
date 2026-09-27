@@ -202,7 +202,7 @@ int net_init_wsmux(const Netdev *netdev, const char *name,
     /* QAPI optional fields are exposed as `has_X` + `X`; default is
      * the first enum value (`qemu`, index 0). */
     s->encode = (opts->has_encode &&
-                 opts->encode == NETDEV_WSMUX_ENCODE_RAW) ? 1 : 0;
+                 opts->encode == NETDEV_WS_MUX_ENCODE_RAW) ? 1 : 0;
 
     qemu_set_info_str(&s->nc, "wsmux: %s", s->url);
 
