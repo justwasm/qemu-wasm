@@ -102,7 +102,9 @@ static ssize_t wsmux_receive(NetClientState *ncs,
                              const uint8_t *buf, size_t size)
 {
     NetWsMuxState *s = DO_UPCAST(NetWsMuxState, nc, ncs);
-    return wsmux_send_frame(ncs, buf, size, s->encode != 0);
+    /* encode=0 (raw, default) ships L2 verbatim; encode=1 (qemu)
+     * prepends the 4-byte BE length prefix. */
+    return wsmux_send_frame(ncs, buf, size, s->encode == 0);
 }
 
 static void wsmux_link_status_changed(NetClientState *ncs)
@@ -199,10 +201,15 @@ int net_init_wsmux(const Netdev *netdev, const char *name,
     s->co = NULL;
     s->url = g_strdup(opts->url);
     s->bridge = g_strdup(opts->bridge ? opts->bridge : "wsmuxBridge");
-    /* QAPI optional fields are exposed as `has_X` + `X`; default is
-     * the first enum value (`qemu`, index 0). */
+    /* Wire framing: when `encode == 0` (raw, default) we ship L2
+     * frames verbatim — what the upstream vnet /x/net WebSocket
+     * (gearshell/vnet, apptron/worker, progrium/go-netstack) expects
+     * on the wire. When `encode == 1` (qemu legacy) we prepend a
+     * 4-byte big-endian length prefix per frame, matching qemu's
+     * native QemuProtocol framing for hosts that DO expect it (qemu
+     * chardev helpers with vnet_hdr=true). */
     s->encode = (opts->has_encode &&
-                 opts->encode == NETDEV_WS_MUX_ENCODE_RAW) ? 1 : 0;
+                 opts->encode == NETDEV_WS_MUX_ENCODE_QEMU) ? 1 : 0;
 
     qemu_set_info_str(&s->nc, "wsmux: %s", s->url);
 

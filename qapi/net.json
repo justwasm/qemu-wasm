@@ -280,25 +280,30 @@
 ##
 # @NetdevWsMuxEncode:
 #
-# Framing format for the upstream WebSocket: "qemu" prepends a
-# 4-byte big-endian length prefix to every raw L2 frame; "raw"
-# sends one frame per WebSocket message.
+# Framing format for the upstream WebSocket. The default (raw) ships
+# L2 frames verbatim — one frame per WebSocket binary message — which
+# is what the upstream vnet /x/net gateway (gearshell/vnet,
+# apptron/worker, progrium/go-netstack) speaks on the wire. The "qemu"
+# value prepends a 4-byte big-endian length prefix to every frame, for
+# hosts that expect qemu's native QemuProtocol framing (qemu chardev
+# helpers with vnet_hdr=true).
 #
 # Since: 9.2
 ##
 { 'enum': 'NetdevWsMuxEncode',
-  'data': [ 'qemu', 'raw' ] }
+  'data': [ 'raw', 'qemu' ] }
 
 ##
 # @NetdevWsMuxOptions:
 #
-# WebSocket-multiplexed network backend used by qemu-wasm. Frames
-# are framed as vnet L2: a 4-byte big-endian length prefix followed
-# by the raw Ethernet payload. The JavaScript bridge forwards them
-# between the QEMU chardev and the host WebSocket relay.
+# WebSocket-multiplexed network backend used by qemu-wasm. By default
+# (encode=raw) L2 frames are forwarded verbatim — one frame per
+# WebSocket binary message — which matches the upstream vnet /x/net
+# gateway (gearshell/vnet, apptron/worker). encode=qemu instead
+# prepends a 4-byte big-endian length prefix on every frame.
 #
 # @url: WebSocket URL to connect to (for example
-#       wss://vnet.example/x/net).
+#       wss://vnet.net.k0s.io/x/net).
 #
 # @bridge: name of the JavaScript helper registered on Module that
 #          owns the WebSocket and pumps the framed payloads.
