@@ -1,9 +1,14 @@
 name: release-qemu-wasm-wsmux
 
 on:
+  # Glob syntax only — GitHub Actions tag filters use fnmatch, which
+  # treats `[0-9]+` as a char-class pattern, not "one or more digits".
+  # The strict `vX.Y.Z-wsmuxN` shape is enforced in the promote-release
+  # job below with a bash regex check; keep the trigger broad here so
+  # every wsmux tag actually fires this workflow (round 79 fixed this).
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+-wsmux.*"
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:

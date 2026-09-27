@@ -3,8 +3,10 @@ name: build-qemu-wasm-wsmux
 on:
   push:
     branches: [wsmux-netdev, master]
-    tags:
-      - "v*"
+    # Tag pushes are handled by release-qemu-wasm-wsmux.yml, which
+    # builds + publishes in one pass. Skip here so we don't burn
+    # ~12 min of CI on a duplicate build.
+    tags-ignore: ["v*"]
   workflow_dispatch: {}
 
 permissions:
