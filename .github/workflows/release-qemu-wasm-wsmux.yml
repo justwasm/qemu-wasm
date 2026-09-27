@@ -38,19 +38,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Round 82 fix: don't read ${{ steps.tag.outputs.value }} in the
+          # same step that writes to $GITHUB_OUTPUT. GitHub rewrites the
+          # output file before running the step, so the templated value
+          # is "" and the regex check below fails (this is what broke
+          # v0.4.44-wsmux18's promote-release job). Compute the value
+          # once in bash, set the output, and reuse the bash var.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            release_tag="${{ inputs.tag }}"
           else
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            release_tag="${GITHUB_REF_NAME}"
           fi
-          release_tag="${{ steps.tag.outputs.value }}"
+          echo "value=$release_tag" >> "$GITHUB_OUTPUT"
           if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-wsmux[0-9]+$ ]]; then
             echo "Tag $release_tag does not match vX.Y.Z-wsmuxN"
             exit 2
           fi
           gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$release_tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --generate-notes --title "QEMU Wasm wsmux $release_tag"
-          echo "value=$release_tag" >> "$GITHUB_OUTPUT"
 
   build:
     needs: promote-release
