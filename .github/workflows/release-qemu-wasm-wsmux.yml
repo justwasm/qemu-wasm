@@ -1,11 +1,6 @@
 name: release-qemu-wasm-wsmux
 
 on:
-  # Glob syntax only — GitHub Actions tag filters use fnmatch, which
-  # treats `[0-9]+` as a char-class pattern, not "one or more digits".
-  # The strict `vX.Y.Z-wsmuxN` shape is enforced in the promote-release
-  # job below with a bash regex check; keep the trigger broad here so
-  # every wsmux tag actually fires this workflow (round 79 fixed this).
   push:
     tags:
       - "v*"
@@ -38,12 +33,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Round 82 fix: don't read ${{ steps.tag.outputs.value }} in the
-          # same step that writes to $GITHUB_OUTPUT. GitHub rewrites the
-          # output file before running the step, so the templated value
-          # is "" and the regex check below fails (this is what broke
-          # v0.4.44-wsmux18's promote-release job). Compute the value
-          # once in bash, set the output, and reuse the bash var.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             release_tag="${{ inputs.tag }}"
           else
@@ -78,12 +67,6 @@ jobs:
       - name: Build qemu-system-x86_64.wasm
         run: |
           docker build -t buildqemu - < Dockerfile
-          # Round 82 fix: bind :rw, not :ro. Meson's wrap-git fallback
-          # tries `git init dtc` inside /qemu/subprojects during
-          # configure; a read-only mount aborts with "cannot mkdir dtc:
-          # Read-only file system" (this is what killed
-          # v0.4.44-wsmux19's build job in 7m22s). Build under
-          # /qemu/build so artefacts land inside the writable mount.
           docker run --rm -d --name build-qemu-wasm -v /tmp/qemu-src:/qemu:rw buildqemu
           docker exec build-qemu-wasm bash -c '
             set -euo pipefail
