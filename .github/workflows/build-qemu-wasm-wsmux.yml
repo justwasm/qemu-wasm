@@ -45,33 +45,11 @@ jobs:
               set -euo pipefail
               cd /work
               EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sASYNCIFY_IMPORTS=ffi_call_js"
-              # Pre-populate every wrap-git subproject so meson picks them up
-              # locally instead of trying to fetch from gitlab inside the
-              # sandbox.
-              for dir in dtc keycodemapdb berkeley-softfloat-3 berkeley-testfloat-3 libvfio-user libblkio slirp; do
-                case "$dir" in
-                  libblkio) url="https://gitlab.com/libblkio/libblkio" ;;
-                  slirp) url="https://gitlab.freedesktop.org/slirp/libslirp.git" ;;
-                  *) url="https://gitlab.com/qemu-project/${dir}.git" ;;
-                esac
-                if [ ! -d "subprojects/${dir}" ]; then
-                  git clone --depth 50 "$url" "subprojects/${dir}" || true
-                  git -C "subprojects/${dir}" fetch --depth 50 origin HEAD || true
-                  git -C "subprojects/${dir}" checkout --quiet FETCH_HEAD 2>/dev/null || true
-                fi
-              done
-              # Copy packagefiles into wrap-git subprojects that rely on
-              # patch_directory. Meson does not apply them automatically when
-              # the wrap source already exists locally, so we mirror what a
-              # wrap-git fetch would do.
-              for dir in berkeley-softfloat-3 berkeley-testfloat-3; do
-                if [ -d "subprojects/packagefiles/$dir" ] && [ -d "subprojects/$dir" ]; then
-                  cp -R "subprojects/packagefiles/$dir/." "subprojects/$dir/"
-                fi
-              done
               # Remove edk2 (qemu-wasm subhook submodule is unreachable).
               rm -rf subprojects/edk2
-              # Run configure + make using the staged tree.
+              # Run configure + make. Meson will fetch every wrap-git
+              # subproject from gitlab inside the container; release
+              # workflow uses this same approach successfully.
               emconfigure /work/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
                 --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs \
                 --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="-sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS"
