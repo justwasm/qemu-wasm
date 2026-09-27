@@ -78,17 +78,25 @@ jobs:
       - name: Build qemu-system-x86_64.wasm
         run: |
           docker build -t buildqemu - < Dockerfile
-          docker run --rm -d --name build-qemu-wasm -v /tmp/qemu-src:/qemu:ro buildqemu
+          # Round 82 fix: bind :rw, not :ro. Meson's wrap-git fallback
+          # tries `git init dtc` inside /qemu/subprojects during
+          # configure; a read-only mount aborts with "cannot mkdir dtc:
+          # Read-only file system" (this is what killed
+          # v0.4.44-wsmux19's build job in 7m22s). Build under
+          # /qemu/build so artefacts land inside the writable mount.
+          docker run --rm -d --name build-qemu-wasm -v /tmp/qemu-src:/qemu:rw buildqemu
           docker exec build-qemu-wasm bash -c '
             set -euo pipefail
             EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js --js-library=/qemu/net/wsmux.js -sEXPORT_ES6=1 -sASYNCIFY_IMPORTS=ffi_call_js -sLZ4=1" ;
+            mkdir -p /qemu/build
+            cd /qemu/build
             emconfigure /qemu/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
               --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs \
               --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="-sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS"
             emmake make -j"$(nproc)" qemu-system-x86_64
-            mkdir -p /build/x86_64-wsmux
-            /emsdk/upstream/emscripten/tools/file_packager.py qemu-system-x86_64.data --preload /pack > /build/x86_64-wsmux/load.js || true
-            cp qemu-system-x86_64 qemu-system-x86_64.wasm qemu-system-x86_64.worker.js qemu-system-x86_64.data load.js /build/x86_64-wsmux/ 2>/dev/null || true
+            mkdir -p /qemu/build/x86_64-wsmux
+            /emsdk/upstream/emscripten/tools/file_packager.py qemu-system-x86_64.data --preload /pack > /qemu/build/x86_64-wsmux/load.js || true
+            cp qemu-system-x86_64 qemu-system-x86_64.wasm qemu-system-x86_64.worker.js qemu-system-x86_64.data load.js /qemu/build/x86_64-wsmux/ 2>/dev/null || true
           '
       - uses: actions/upload-artifact@v4
         with:
