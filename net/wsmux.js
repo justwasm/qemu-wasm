@@ -41,24 +41,37 @@ mergeInto(LibraryManager.library, {
     $wsmuxReadFrame__deps: ['$wsmuxBridges', '$wsmuxResolveBridge'],
     $wsmuxReadFrame: (bridgeName, handle) => {
         const bridge = wsmuxResolveBridge(bridgeName);
-        if (!bridge) throw new Error(`wsmux bridge ${bridgeName} not registered on Module`);
-        return new Promise((resolve, reject) => {
-            const pending = wsmuxBridges[handle] || (wsmuxBridges[handle] = { pending: [] });
-            pending.pending.push(resolve);
+        if (!bridge) return Promise.resolve(new Uint8Array(0));
+        return new Promise((resolve) => {
+            let settled = false;
+            const settle = (frame) => {
+                if (settled) return;
+                settled = true;
+                resolve(frame || new Uint8Array(0));
+            };
             const dispose = bridge.recv(handle, (frame) => {
-                pending.pending.shift();
-                resolve(frame);
+                settle(frame);
             });
-            pending.activeDispose = dispose;
+            // Wrap the disposer: if the bridge tears the handle down
+            // while we are still waiting, deliver an empty frame so
+            // the wasm side can exit the recv loop.
+            const wrappedDispose = () => {
+                try { if (dispose) dispose(); } catch (e) { /* ignore */ }
+                settle(new Uint8Array(0));
+            };
+            const pending = wsmuxBridges[handle] || (wsmuxBridges[handle] = {});
+            pending.activeDispose = wrappedDispose;
         });
     },
 
-    js_wsmux_open: (urlPtr, bridgeNamePtr) => {
+    js_wsmux_open__async: true,
+    js_wsmux_open__deps: ['$wsmuxResolveBridge'],
+    js_wsmux_open: async (urlPtr, bridgeNamePtr) => {
         const url = UTF8ToString(urlPtr);
         const name = bridgeNamePtr ? UTF8ToString(bridgeNamePtr) : 'wsmuxBridge';
         const bridge = wsmuxResolveBridge(name);
         if (!bridge) return 0;
-        const handle = bridge.connect(url);
+        const handle = await bridge.connect(url);
         wsmuxBridges[handle] = { pending: [] };
         return handle;
     },
