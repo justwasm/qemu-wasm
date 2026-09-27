@@ -19,13 +19,6 @@ jobs:
         with:
           submodules: shallow
       - uses: docker/setup-buildx-action@v3
-      - name: Prune broken edk2 subhook submodule
-        run: |
-          if [ -d roms/edk2 ]; then
-            git -C roms/edk2 submodule deinit -f UnitTestFrameworkPkg/Library/SubhookLib/subhook || true
-            git -C roms/edk2 rm -f UnitTestFrameworkPkg/Library/SubhookLib/subhook || true
-            git -C roms/edk2 config -f --remove-section submodule."UnitTestFrameworkPkg/Library/SubhookLib/subhook" || true
-          fi
       - name: Build qemu-system-x86_64.wasm (with wsmux netdev)
         env:
           DOCKER_BUILDKIT: "1"
