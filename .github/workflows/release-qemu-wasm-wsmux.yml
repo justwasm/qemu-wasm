@@ -98,7 +98,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
-      packages: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -114,14 +113,3 @@ jobs:
           gh release upload "$release_tag" --repo "$GITHUB_REPOSITORY" --clobber \
             qemu-system-x86_64.wasm out.js qemu-system-x86_64.worker.js SHA256SUMS
           echo "Published wsmux assets for $release_tag"
-
-      - name: Push image to GHCR
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          release_tag="${{ needs.promote-release.outputs.tag }}"
-          oras login ghcr.io -u "$GITHUB_ACTOR" -p "$GH_TOKEN"
-          for arch in x86 riscv64 arm64; do
-            : # placeholder; arch-specific bundles live in separate workflows
-          done
-          echo "GHCR mirror placeholder for $release_tag"
