@@ -19,21 +19,31 @@ jobs:
         with:
           submodules: shallow
       - uses: docker/setup-buildx-action@v3
+      - name: Stage source for in-container build
+        run: |
+            # Use the same rw-clone trick as release-qemu-wasm-wsmux.yml:
+            # the qemu source tree needs to be writable inside the
+            # container so wrap-git subprojects can be cloned. The
+            # read-only bind mount used in earlier iterations kept
+            # tripping meson's "cannot mkdir ...: Read-only file system"
+            # error from git clone into subprojects/<dir>.
+            rm -rf /tmp/qemu-src
+            git clone --depth 1 --branch "${GITHUB_REF_NAME}" \
+              "https://github.com/${GITHUB_REPOSITORY}.git" /tmp/qemu-src
+            cd /tmp/qemu-src
+            git submodule update --init --depth 1 roms/edk2 dtc 2>/dev/null || true
       - name: Build qemu-system-x86_64.wasm (with wsmux netdev)
         env:
           DOCKER_BUILDKIT: "1"
         run: |
           set -x
-          # Build the builder image locally from the Dockerfile in this
-          # checkout (same image the release workflow uses). This avoids
-          # depending on a GHCR tag that may be racing or private, and
-          # ensures the source tree and the builder match exactly.
           docker build -t qemu-wasm-builder:local - < Dockerfile
           docker run --rm \
-            -v "$PWD":/qemu:ro \
+            -v /tmp/qemu-src:/work:rw \
             qemu-wasm-builder:local \
             bash -c '
               set -euo pipefail
+              cd /work
               EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js -sASYNCIFY_IMPORTS=ffi_call_js"
               # Pre-populate every wrap-git subproject so meson picks them up
               # locally instead of trying to fetch from gitlab inside the
@@ -62,18 +72,18 @@ jobs:
               # Remove edk2 (qemu-wasm subhook submodule is unreachable).
               rm -rf subprojects/edk2
               # Run configure + make using the staged tree.
-              emconfigure /qemu/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
+              emconfigure /work/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
                 --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs \
                 --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="-sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS"
               emmake make -j"$(nproc)" qemu-system-x86_64
-              mkdir -p /qemu/out
-              cp /build/qemu-system-x86_64.wasm /qemu/out/
-              cp /build/qemu-system-x86_64 /qemu/out/out.js
-              cp /build/qemu-system-x86_64.worker.js /qemu/out/
-              ls -la /qemu/out
+              mkdir -p /work/out
+              cp /build/qemu-system-x86_64.wasm /work/out/
+              cp /build/qemu-system-x86_64 /work/out/out.js
+              cp /build/qemu-system-x86_64.worker.js /work/out/
+              ls -la /work/out
             '
       - uses: actions/upload-artifact@v4
         with:
           name: qemu-system-x86_64-wsmux
-          path: out
+          path: /tmp/qemu-src/out
           if-no-files-found: error
