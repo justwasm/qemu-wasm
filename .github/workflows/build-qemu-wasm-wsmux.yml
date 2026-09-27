@@ -55,9 +55,13 @@ jobs:
                 --extra-cflags="$EXTRA_CFLAGS" --extra-cxxflags="$EXTRA_CFLAGS" --extra-ldflags="-sEXPORTED_RUNTIME_METHODS=getTempRet0,setTempRet0,addFunction,removeFunction,TTY,FS"
               emmake make -j"$(nproc)" qemu-system-x86_64
               mkdir -p /work/out
-              cp /build/qemu-system-x86_64.wasm /work/out/
-              cp /build/qemu-system-x86_64 /work/out/out.js
-              cp /build/qemu-system-x86_64.worker.js /work/out/
+              # emmake output goes to the meson builddir (default ./build
+              # relative to /work). Mirror the release workflow's copy
+              # step: artefacts land at /work/build/, not /build/.
+              cd /work/build
+              cp qemu-system-x86_64.wasm /work/out/
+              cp qemu-system-x86_64 /work/out/out.js
+              cp qemu-system-x86_64.worker.js /work/out/
               ls -la /work/out
             '
       - uses: actions/upload-artifact@v4
