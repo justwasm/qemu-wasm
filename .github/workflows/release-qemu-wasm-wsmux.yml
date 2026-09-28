@@ -74,7 +74,7 @@ jobs:
               set -euo pipefail
               mkdir -p /work/build
               cd /work/build
-              EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js --js-library=/work/net/wsmux.js -sASYNCIFY_IMPORTS=ffi_call_js -sLZ4=1"
+              EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=mimalloc --js-library=/build/node_modules/xterm-pty/emscripten-pty.js --js-library=/work/net/wsmux.js -sASYNCIFY_IMPORTS=ffi_call_js,js_wsmux_open,js_wsmux_recv -sLZ4=1"
               rm -rf /work/subprojects/edk2
               emconfigure /work/configure --static --target-list=x86_64-softmmu --cpu=wasm32 --cross-prefix= \
                 --without-default-features --enable-system --with-coroutine=fiber --enable-virtfs \
