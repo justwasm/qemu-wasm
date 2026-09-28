@@ -146,12 +146,20 @@ static void coroutine_fn wsmux_recv_co(void *opaque)
     while (!s->closed && s->handle > 0) {
 #if defined(__EMSCRIPTEN__)
         int n = js_wsmux_recv(s->handle, buf, WSMUX_RECV_BUF, s->bridge);
-        if (n <= 0 || s->closed) {
-            /* n == 0 is the JS bridge's signal that the handle has
+        if (n < 0 || s->closed) {
+            /* n < 0 is the JS bridge's signal that the handle has
              * been torn down (see net/wsmux.js wsmuxReadFrame). Treat
-             * it the same as -1: leave the recv loop and let the
-             * coroutine exit. */
+             * it the same as the s->closed path: leave the recv loop
+             * and let the coroutine exit. n == 0 just means "no
+             * frame right now, please poll again" — the coroutine
+             * loops and the JS side will return >=1 when a frame
+             * arrives. */
             break;
+        }
+        if (n == 0) {
+            /* No frame available yet. Yield back to the event loop
+             * so the JS side can deliver one. */
+            continue;
         }
         /* Hand the frame to the peer nic. qemu_receive_packet walks
          * filters and the receiving nic's receive callback (e1000,
