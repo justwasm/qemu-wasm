@@ -26,7 +26,6 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "qemu/coroutine.h"
-#include "qemu/timer.h"
 #include "net/net.h"
 #include "clients.h"
 
@@ -147,22 +146,12 @@ static void coroutine_fn wsmux_recv_co(void *opaque)
     while (!s->closed && s->handle > 0) {
 #if defined(__EMSCRIPTEN__)
         int n = js_wsmux_recv(s->handle, buf, WSMUX_RECV_BUF, s->bridge);
-        if (n < 0 || s->closed) {
-            /* n < 0 is the JS bridge's signal that the handle has
-             * been torn down. Leave the recv loop and let the
+        if (n <= 0 || s->closed) {
+            /* n == 0 is the JS bridge's signal that the handle has
+             * been torn down (see net/wsmux.js wsmuxReadFrame). Treat
+             * it the same as -1: leave the recv loop and let the
              * coroutine exit. */
             break;
-        }
-        if (n == 0) {
-            /* No frame available yet. Yield the coroutine instead of
-             * spinning: under -sPROXY_TO_PTHREAD the worker thread
-             * that runs this coroutine also runs qemu's main CPU
-             * loop, so a busy-wait here starves the guest and the
-             * kernel never boots. qemu_co_sleep_ns parks the
-             * coroutine on the host event loop and the JS bridge
-             * gets a chance to deliver the next frame. */
-            qemu_co_sleep_ns(QEMU_CLOCK_VIRTUAL, 1000000 /* 1ms */);
-            continue;
         }
         /* Hand the frame to the peer nic. qemu_receive_packet walks
          * filters and the receiving nic's receive callback (e1000,
